@@ -327,5 +327,7 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Server กำลังทำงานที่พอร์ต ${PORT} (${process.env.NODE_ENV})`);
+  console.log(
+    `Server กำลังทำงานที่ http://localhost:${PORT} (${process.env.NODE_ENV})`,
+  );
 });
