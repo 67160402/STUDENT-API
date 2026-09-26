@@ -10,10 +10,22 @@ const pool = require("./db");
 const schema = require("./schema");
 const root = require("./resolvers");
 
+const studentsRouter = require("./routes/students");
+
+const {
+  hashPassword,
+  verifyPassword,
+  generateToken,
+} = require("./auth-helpers");
+
+const { authenticateToken, authorizeRole } = require("./middlewares/auth");
+
+const { connectRedis } = require("./cache");
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ลำดับ middleware มีความสำคัญ: security header → CORS → logger → body parser
+// Middleware
 app.use(helmet());
 
 app.use(
@@ -38,49 +50,19 @@ app.use(
 
 // หน้าแรก
 app.get("/", (req, res) => {
-  res.status(200).json({ message: "Student API พร้อมใช้งานแล้ว" });
+  res.status(200).json({
+    message: "Student API พร้อมใช้งานแล้ว",
+  });
 });
 
-// GET นักศึกษาทั้งหมด
-app.get("/api/v1/students", async (req, res, next) => {
-  try {
-    const [rows] = await pool.query("SELECT * FROM students");
+// API v1
+const v1Router = express.Router();
 
-    res.status(200).json({
-      message: "สำเร็จ",
-      data: rows,
-    });
-  } catch (err) {
-    next(err);
-  }
-});
+// Routes นักศึกษา
+v1Router.use("/students", studentsRouter);
 
-// GET นักศึกษาตาม ID
-app.get("/api/v1/students/:id", async (req, res, next) => {
-  try {
-    const [rows] = await pool.query("SELECT * FROM students WHERE id = ?", [
-      req.params.id,
-    ]);
-
-    if (rows.length === 0) {
-      return res.status(404).json({
-        error: {
-          code: "NOT_FOUND",
-          message: "ไม่พบข้อมูลนิสิต",
-        },
-      });
-    }
-
-    res.status(200).json({
-      message: "สำเร็จ",
-      data: rows[0],
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-app.post("/api/v1/students/:id/enrollments", async (req, res, next) => {
+// ลงทะเบียนรายวิชา
+v1Router.post("/students/:id/enrollments", async (req, res, next) => {
   const studentId = req.params.id;
   const { courseId } = req.body;
   const connection = await pool.getConnection();
@@ -95,15 +77,23 @@ app.post("/api/v1/students/:id/enrollments", async (req, res, next) => {
 
     if (courseRows.length === 0) {
       await connection.rollback();
+
       return res.status(404).json({
-        error: { code: "COURSE_NOT_FOUND", message: "ไม่พบรายวิชาที่ระบุ" },
+        error: {
+          code: "COURSE_NOT_FOUND",
+          message: "ไม่พบรายวิชาที่ระบุ",
+        },
       });
     }
 
     if (courseRows[0].seat_available <= 0) {
       await connection.rollback();
+
       return res.status(409).json({
-        error: { code: "SEAT_FULL", message: "ที่นั่งเต็มแล้ว" },
+        error: {
+          code: "SEAT_FULL",
+          message: "ที่นั่งเต็มแล้ว",
+        },
       });
     }
 
@@ -118,9 +108,13 @@ app.post("/api/v1/students/:id/enrollments", async (req, res, next) => {
     );
 
     await connection.commit();
-    res.status(201).json({ message: "ลงทะเบียนสำเร็จ" });
+
+    res.status(201).json({
+      message: "ลงทะเบียนสำเร็จ",
+    });
   } catch (err) {
     await connection.rollback();
+
     if (err.code === "ER_DUP_ENTRY") {
       return res.status(409).json({
         error: {
@@ -129,38 +123,40 @@ app.post("/api/v1/students/:id/enrollments", async (req, res, next) => {
         },
       });
     }
+
     next(err);
   } finally {
     connection.release();
   }
 });
 
-// POST เพิ่มนักศึกษา
-app.post("/api/v1/students", async (req, res, next) => {
-  const { name, major, email } = req.body;
+// สมัครสมาชิก
+v1Router.post("/auth/register", async (req, res, next) => {
+  const { email, password } = req.body;
 
-  if (!name || !major || !email) {
+  if (!email || !password) {
     return res.status(400).json({
       error: {
         code: "VALIDATION_ERROR",
-        message: "กรุณาระบุข้อมูลให้ครบถ้วน",
+        message: "กรุณาระบุ email และ password",
       },
     });
   }
 
   try {
+    const passwordHash = await hashPassword(password);
+
     const [result] = await pool.query(
-      "INSERT INTO students (name, major, email) VALUES (?, ?, ?)",
-      [name, major, email],
+      "INSERT INTO users (email, password_hash, role) VALUES (?, ?, 'student')",
+      [email, passwordHash],
     );
 
     res.status(201).json({
-      message: "เพิ่มข้อมูลสำเร็จ",
+      message: "สมัครสมาชิกสำเร็จ",
       data: {
         id: result.insertId,
-        name,
-        major,
         email,
+        role: "student",
       },
     });
   } catch (err) {
@@ -177,48 +173,8 @@ app.post("/api/v1/students", async (req, res, next) => {
   }
 });
 
-const {
-  hashPassword,
-  verifyPassword,
-  generateToken,
-} = require("./auth-helpers");
-
-const { authenticateToken, authorizeRole } = require("./middlewares/auth");
-
-app.post("/api/v1/auth/register", async (req, res, next) => {
-  const { email, password } = req.body;
-
-  if (!email || !password) {
-    return res.status(400).json({
-      error: {
-        code: "VALIDATION_ERROR",
-        message: "กรุณาระบุ email และ password",
-      },
-    });
-  }
-
-  try {
-    const passwordHash = await hashPassword(password);
-    const [result] = await pool.query(
-      "INSERT INTO users (email, password_hash, role) VALUES (?, ?, 'student')",
-      [email, passwordHash],
-    );
-
-    res.status(201).json({
-      message: "สมัครสมาชิกสำเร็จ",
-      data: { id: result.insertId, email, role: "student" },
-    });
-  } catch (err) {
-    if (err.code === "ER_DUP_ENTRY") {
-      return res.status(409).json({
-        error: { code: "DUPLICATE_EMAIL", message: "อีเมลนี้มีอยู่ในระบบแล้ว" },
-      });
-    }
-    next(err);
-  }
-});
-
-app.post("/api/v1/auth/login", async (req, res, next) => {
+// Login
+v1Router.post("/auth/login", async (req, res, next) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
@@ -245,6 +201,7 @@ app.post("/api/v1/auth/login", async (req, res, next) => {
     }
 
     const user = rows[0];
+
     const isPasswordValid = await verifyPassword(password, user.password_hash);
 
     if (!isPasswordValid) {
@@ -257,22 +214,27 @@ app.post("/api/v1/auth/login", async (req, res, next) => {
     }
 
     const token = generateToken(user);
-    res.status(200).json({ message: "เข้าสู่ระบบสำเร็จ", token });
+
+    res.status(200).json({
+      message: "เข้าสู่ระบบสำเร็จ",
+      token,
+    });
   } catch (err) {
     next(err);
   }
 });
 
-app.get("/api/v1/auth/me", authenticateToken, (req, res) => {
+// ตรวจสอบข้อมูลผู้ใช้จาก Token
+v1Router.get("/auth/me", authenticateToken, (req, res) => {
   res.status(200).json({
     message: "สำเร็จ",
     data: req.user,
   });
 });
 
-// DELETE ลบข้อมูลนักศึกษา - เฉพาะ admin เท่านั้น
-app.delete(
-  "/api/v1/students/:id",
+// DELETE นักศึกษา - เฉพาะ admin
+v1Router.delete(
+  "/students/:id",
   authenticateToken,
   authorizeRole("admin"),
   async (req, res, next) => {
@@ -299,6 +261,27 @@ app.delete(
   },
 );
 
+// ใช้ prefix /api/v1 กับทุก route ด้านบน
+app.use("/api/v1", v1Router);
+
+// API v2
+const v2Router = express.Router();
+
+v2Router.get("/students", async (req, res, next) => {
+  try {
+    const [rows] = await pool.query("SELECT * FROM students");
+
+    res.status(200).json({
+      items: rows,
+      count: rows.length,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.use("/api/v2", v2Router);
+
 // 404
 app.use((req, res) => {
   res.status(404).json({
@@ -309,7 +292,7 @@ app.use((req, res) => {
   });
 });
 
-// Error-handling middleware
+// Error Handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
 
@@ -326,8 +309,16 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(
-    `Server กำลังทำงานที่ http://localhost:${PORT} (${process.env.NODE_ENV})`,
-  );
-});
+// Start Server
+connectRedis()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(
+        `Server กำลังทำงานที่ http://localhost:${PORT} (${process.env.NODE_ENV})`,
+      );
+    });
+  })
+  .catch((err) => {
+    console.error("เชื่อมต่อ Redis ไม่สำเร็จ เซิร์ฟเวอร์จะไม่เริ่มทำงาน:", err);
+    process.exit(1);
+  });
