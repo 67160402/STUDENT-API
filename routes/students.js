@@ -5,6 +5,9 @@ const pool = require("../db");
 const { redisClient } = require("../cache");
 const { authorizeRole } = require("../middlewares/auth");
 
+const { authenticateToken } = require("../middlewares/auth");
+const { getStudentEnrichment } = require("../services/enrichment-service");
+
 let students = [
   {
     id: 1,
@@ -72,8 +75,23 @@ router.get("/", parsePagination, parseSort, async (req, res, next) => {
   }
 });
 
-// 2. GET ดึงข้อมูลนักศึกษารายบุคคลตาม id
+// สัปดาห์ที่ 11: ข้อมูลเสริมจาก Public API พร้อม Retry/Timeout/Fallback
+router.get("/:id/enrichment", authenticateToken, async (req, res, next) => {
+  try {
+    const enrichment = await getStudentEnrichment(req.params.id);
 
+    return res.status(200).json({
+      data: {
+        studentId: req.params.id,
+        enrichment,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 2. GET ดึงข้อมูลนักศึกษารายบุคคลตาม id
 // GET คืนข้อมูลนักศึกษาพร้อมรายวิชาที่ลงทะเบียน
 router.get("/:id", (req, res) => {
   const id = Number(req.params.id);

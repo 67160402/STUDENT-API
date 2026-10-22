@@ -6,6 +6,12 @@ const pool = require("./db");
 const { generateToken, hashPassword } = require("./auth-helpers");
 
 describe("App Coverage Tests", () => {
+  const studentToken = generateToken({
+    id: 1,
+    email: "student@example.com",
+    role: "student",
+  });
+
   afterEach(() => {
     jest.clearAllMocks();
   });
@@ -151,6 +157,7 @@ describe("App Coverage Tests", () => {
 
     const response = await request(app)
       .post("/api/v1/students/1/enrollments")
+      .set("Authorization", `Bearer ${studentToken}`)
       .send({ courseId: 9999 });
 
     expect(response.status).toBe(404);
@@ -179,6 +186,7 @@ describe("App Coverage Tests", () => {
 
     const response = await request(app)
       .post("/api/v1/students/1/enrollments")
+      .set("Authorization", `Bearer ${studentToken}`)
       .send({ courseId: 101 });
 
     expect(response.status).toBe(409);
@@ -212,6 +220,7 @@ describe("App Coverage Tests", () => {
 
     const response = await request(app)
       .post("/api/v1/students/1/enrollments")
+      .set("Authorization", `Bearer ${studentToken}`)
       .send({ courseId: 101 });
 
     expect(response.status).toBe(201);
