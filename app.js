@@ -18,7 +18,18 @@ const {
 
 const { authenticateToken, authorizeRole } = require("./middlewares/auth");
 
+const swaggerUi = require("swagger-ui-express");
+const YAML = require("js-yaml");
+const fs = require("fs");
+const path = require("path");
+
 const app = express();
+
+const openapiDocument = YAML.load(
+  fs.readFileSync(path.join(__dirname, "openapi.yaml"), "utf8"),
+);
+
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(openapiDocument));
 
 // Middleware
 app.use(helmet());
@@ -54,7 +65,7 @@ app.get("/", (req, res) => {
 const v1Router = express.Router();
 
 // Routes นักศึกษา
-v1Router.use("/students", studentsRouter);
+v1Router.use("/students", authenticateToken, studentsRouter);
 
 // ลงทะเบียนรายวิชา
 v1Router.post("/students/:id/enrollments", async (req, res, next) => {

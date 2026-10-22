@@ -3,6 +3,7 @@ const router = express.Router();
 
 const pool = require("../db");
 const { redisClient } = require("../cache");
+const { authorizeRole } = require("../middlewares/auth");
 
 let students = [
   {
@@ -107,7 +108,7 @@ router.get("/:id", (req, res) => {
 });
 
 // 3. POST เพิ่มข้อมูลนักศึกษาใหม่
-router.post("/", async (req, res, next) => {
+router.post("/", authorizeRole("admin"), async (req, res, next) => {
   const { name, major, email } = req.body;
 
   if (!name || !major || !email) {
@@ -151,16 +152,9 @@ router.post("/", async (req, res, next) => {
 });
 
 // 4. PUT แก้ไขข้อมูลนักศึกษาทั้งระเบียน
-router.put("/:id", (req, res) => {
+router.put("/:id", async (req, res, next) => {
   const id = Number(req.params.id);
   const { name, major } = req.body;
-  const student = students.find((s) => s.id === id);
-
-  if (!student) {
-    return res.status(404).json({
-      message: "ไม่พบข้อมูลนักศึกษา",
-    });
-  }
 
   if (!name || !major) {
     return res.status(400).json({
@@ -168,13 +162,29 @@ router.put("/:id", (req, res) => {
     });
   }
 
-  student.name = name;
-  student.major = major;
+  try {
+    const [result] = await pool.query(
+      "UPDATE students SET name = ?, major = ? WHERE id = ?",
+      [name, major, id],
+    );
 
-  res.status(200).json({
-    message: "แก้ไขข้อมูลสำเร็จ",
-    data: student,
-  });
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        message: "ไม่พบข้อมูลนักศึกษา",
+      });
+    }
+
+    const [rows] = await pool.query("SELECT * FROM students WHERE id = ?", [
+      id,
+    ]);
+
+    res.status(200).json({
+      message: "แก้ไขข้อมูลสำเร็จ",
+      data: rows[0],
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // ADD. PATCH แก้ไขข้อมูลนักศึกษาบางส่วน

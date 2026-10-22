@@ -1,0 +1,195 @@
+openapi: 3.0.3
+info:
+  title: Student API
+  description: API สำหรับจัดการข้อมูลนิสิต พัฒนาในรายวิชา 88736065
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Development server
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: "VALIDATION_ERROR"
+            message:
+              type: string
+paths:
+  /auth/register:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        "201":
+          description: สมัครสมาชิกสำเร็จ
+        "400":
+          description: ข้อมูลไม่ถูกต้อง
+        "409":
+          description: อีเมลซ้ำ
+
+  /auth/login:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        "200":
+          description: เข้าสู่ระบบสำเร็จ
+        "400":
+          description: ข้อมูลไม่ครบถ้วน
+        "401":
+          description: อีเมลหรือรหัสผ่านไม่ถูกต้อง
+
+  /auth/me:
+    get:
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: ข้อมูลผู้ใช้งานปัจจุบัน
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+
+  /students:
+    get:
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: ดึงข้อมูลนักศึกษาสำเร็จ
+        "401":
+          description: ไม่มี Token หรือ Token ไม่ถูกต้อง
+
+    post:
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - major
+                - email
+              properties:
+                name:
+                  type: string
+                major:
+                  type: string
+                email:
+                  type: string
+                  format: email
+      responses:
+        "201":
+          description: เพิ่มข้อมูลสำเร็จ
+        "400":
+          description: ข้อมูลไม่ครบถ้วน
+        "401":
+          description: ไม่มี Token หรือ Token ไม่ถูกต้อง
+        "403":
+          description: ไม่มีสิทธิ์
+        "409":
+          description: อีเมลซ้ำ
+
+  /students/{id}:
+    put:
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - major
+              properties:
+                name:
+                  type: string
+                major:
+                  type: string
+      responses:
+        "200":
+          description: แก้ไขข้อมูลสำเร็จ
+        "400":
+          description: ข้อมูลไม่ครบถ้วน
+        "401":
+          description: ไม่มี Token หรือ Token ไม่ถูกต้อง
+        "404":
+          description: ไม่พบข้อมูลนักศึกษา
+
+    delete:
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: ลบข้อมูลสำเร็จ
+        "401":
+          description: ไม่มี Token หรือ Token ไม่ถูกต้อง
+        "403":
+          description: ไม่มีสิทธิ์
+        "404":
+          description: ไม่พบข้อมูลนักศึกษา
