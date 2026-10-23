@@ -7,6 +7,7 @@ const { authorizeRole } = require("../middlewares/auth");
 
 const { authenticateToken } = require("../middlewares/auth");
 const { getStudentEnrichment } = require("../services/enrichment-service");
+const { createStudentSchema } = require("../schemas/studentSchema");
 
 let students = [
   {
@@ -127,16 +128,22 @@ router.get("/:id", (req, res) => {
 
 // 3. POST เพิ่มข้อมูลนักศึกษาใหม่
 router.post("/", authorizeRole("admin"), async (req, res, next) => {
-  const { name, major, email } = req.body;
+  const result = createStudentSchema.safeParse(req.body);
 
-  if (!name || !major || !email) {
+  if (!result.success) {
     return res.status(400).json({
       error: {
         code: "VALIDATION_ERROR",
-        message: "กรุณาระบุ name, major และ email ให้ครบถ้วน",
+        message: "ข้อมูลที่ส่งมาไม่ถูกต้อง",
+        details: result.error.issues.map((issue) => ({
+          field: issue.path.join("."),
+          message: issue.message,
+        })),
       },
     });
   }
+
+  const { name, major, email } = result.data;
 
   try {
     const [result] = await pool.query(

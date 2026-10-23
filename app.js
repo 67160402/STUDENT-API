@@ -17,6 +17,7 @@ const {
 } = require("./auth-helpers");
 
 const { authenticateToken, authorizeRole } = require("./middlewares/auth");
+const { authLimiter, generalLimiter } = require("./middlewares/rateLimiter");
 
 const swaggerUi = require("swagger-ui-express");
 const YAML = require("js-yaml");
@@ -43,6 +44,9 @@ app.use(
 
 app.use(morgan("dev"));
 app.use(express.json({ limit: "10kb" }));
+
+app.set("trust proxy", 1);
+app.use(generalLimiter);
 
 // GraphQL
 app.use(
@@ -268,6 +272,7 @@ v1Router.delete(
 );
 
 // ใช้ prefix /api/v1 กับทุก route ด้านบน
+app.use("/api/v1/auth/login", authLimiter);
 app.use("/api/v1", v1Router);
 
 // API v2
